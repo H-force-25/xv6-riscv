@@ -12,13 +12,14 @@ fmtname(char *path)
   // Find first character after last slash.
   for(p=path+strlen(path); p >= path && *p != '/'; p--)
     ;
-  p++;
+  p++; // 最后一个斜杠后的第一个字符
 
   // Return blank-padded name.
   if(strlen(p) >= DIRSIZ)
     return p;
   memmove(buf, p, strlen(p));
-  memset(buf+strlen(p), ' ', DIRSIZ-strlen(p));
+  // 文件名后面填充空格，使其达到DIRSIZ的长度。
+  memset(buf+strlen(p), ' ', DIRSIZ-strlen(p)); 
   return buf;
 }
 
@@ -76,10 +77,10 @@ main(int argc, char *argv[])
   int i;
 
   if(argc < 2){
-    ls(".");
+    ls("."); // 默认搜索当前目录
     exit(0);
   }
   for(i=1; i<argc; i++)
-    ls(argv[i]);
+    ls(argv[i]); // 收到的目录，一个一个来
   exit(0);
 }
