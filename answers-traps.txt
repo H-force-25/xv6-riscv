@@ -1,0 +1,23 @@
+1. Which registers contain arguments to functions? 
+For example, which register holds 13 in main's call to printf?
+
+answer: a0-a7寄存器保存参数；13 存储在a2寄存器。
+
+2. Where is the call to function f in the assembly code for main? Where is the call to g? 
+(Hint: the compiler may inline functions.)
+
+answer: 有些类似于状态转移，在main中调用f，f中调用g。
+
+3. At what address is the function printf located?
+
+answer: 0x630
+
+4. What value is in the register ra just after the jalr to printf in main?
+
+answer:  34: jalr   1536(ra)   0x34+4 = 0x38
+
+5. 
+answer: HE110 World
+
+6. 
+answer: 对于printf()的format字符串在a0，第二个参数3在a1, 若第三个没有指定应该是看寄存器a2里是什么就打印出来。
