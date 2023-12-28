@@ -26,15 +26,24 @@ static void
 barrier()
 {
   // YOUR CODE HERE
-  //
+  // 
   // Block until all threads have called barrier() and
   // then increment bstate.round.
-  //
-  
+  // 
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  bstate.nthread ++;
+  if (bstate.nthread == nthread) {
+    bstate.round ++;
+    bstate.nthread = 0;
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  } else {
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *
-thread(void *xa)
+thread(void *xa)  // xa 代表第几个线程
 {
   long n = (long) xa;
   long delay;
@@ -42,7 +51,7 @@ thread(void *xa)
 
   for (i = 0; i < 20000; i++) {
     int t = bstate.round;
-    assert (i == t);
+    assert (i == t); // 如果一个线程在另一个线程到达屏障之前离开屏障将触发断言（assert）
     barrier();
     usleep(random() % 100);
   }
@@ -53,8 +62,8 @@ thread(void *xa)
 int
 main(int argc, char *argv[])
 {
-  pthread_t *tha;
-  void *value;
+  pthread_t *tha; // 指向线程（池）的指针
+  void *value;    // 
   long i;
   double t1, t0;
 
@@ -62,12 +71,12 @@ main(int argc, char *argv[])
     fprintf(stderr, "%s: %s nthread\n", argv[0], argv[0]);
     exit(-1);
   }
-  nthread = atoi(argv[1]);
+  nthread = atoi(argv[1]); // 指定的线程数
   tha = malloc(sizeof(pthread_t) * nthread);
-  srandom(0);
+  srandom(0);  // 随机微秒数休眠
 
-  barrier_init();
-
+  barrier_init();  
+  // 创建线程
   for(i = 0; i < nthread; i++) {
     assert(pthread_create(&tha[i], NULL, thread, (void *) i) == 0);
   }

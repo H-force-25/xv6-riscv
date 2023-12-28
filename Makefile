@@ -387,4 +387,4 @@ myapi.key:
 	fi;
 
 
-.PHONY: handin tarball tarball-pref clean grade handin-check
+.PHONY: handin tarball tarball-pref clean grade handin-check barrier
