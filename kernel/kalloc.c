@@ -21,12 +21,16 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  char name[9];
+  for (int i = 0; i < NCPU; ++ i) {
+    snprintf(name, sizeof(name), "kmem-%d", i);
+    initlock(&kmem[i].lock, "name");
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -56,27 +60,100 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  push_off();  // 关中断
+  int id = cpuid();
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
+  pop_off();  //开中断
 }
+
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
+// 修改 kalloc ，使得在当前CPU的空闲列表没有可分配内存时窃取其他内存的
+
 void *
 kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();// 关中断
+  int id = cpuid();
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem[id].freelist = r->next;
+  else {
+    int antid;  // another id
+    // 遍历所有CPU的空闲列表
+    for(antid = 0; antid < NCPU; ++antid) {
+      if(antid == id)
+        continue;
+      acquire(&kmem[antid].lock);
+      r = kmem[antid].freelist;
+      if(r) {
+        kmem[antid].freelist = r->next;
+        release(&kmem[antid].lock);
+        break;
+      }
+      release(&kmem[antid].lock);
+    }
+  }
+  release(&kmem[id].lock);
+  pop_off();  //开中断
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// void *
+// ksteal(int cpu) {
+//   struct run *r;
+//   for (int i = 1; i < NCPU; i++) {
+//     // 从右边的第一个邻居开始偷
+//     int next_cpu = (cpu + i) % NCPU;
+//     // --- critical session ---
+//     acquire(&kmem[next_cpu].lock);
+//     r = kmem[next_cpu].freelist;
+//     if (r) {
+//       // steal one page
+//       kmem[next_cpu].freelist = r->next;
+//     }
+//     release(&kmem[next_cpu].lock);
+//     // --- end of critical session ---
+//     if (r) {
+//       break;
+//     }
+//   }
+//   // 有可能返回NULL, 如果邻居也都没有空余页的话
+//   return r;
+// }
+
+// void *
+// kalloc(void)
+// {
+//   struct run *r;
+//   push_off();
+//   int cpu = cpuid();
+//   // --- critical session ---
+//   acquire(&kmem[cpu].lock);
+//   r = kmem[cpu].freelist;
+//   if (r) {
+//     kmem[cpu].freelist = r->next;
+//   }
+//   release(&kmem[cpu].lock);
+//   // --- end of critical session ---
+
+//   if (r == 0) {
+//     r = ksteal(cpu);
+//   }
+//   if(r)
+//     memset((char*)r, 5, PGSIZE); // fill with junk
+
+//   pop_off();
+//   return (void*)r;
+// }

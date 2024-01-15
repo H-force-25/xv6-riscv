@@ -646,7 +646,7 @@ namex(char *path, int nameiparent, char *name)
       return ip;
     }
     if((next = dirlookup(ip, name, 0)) == 0){
-      iunlockput(ip);
+      iunlockput(ip); // 避免这种死锁，namex在获得下一个目录的锁之前解锁该目录
       return 0;
     }
     iunlockput(ip);
