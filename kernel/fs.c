@@ -374,21 +374,24 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
-static uint
+static uint // 在磁盘上查找文件数据的代码
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
-  struct buf *bp;
+  // bn 参数是一个“逻辑块号”——文件中相对于文件开头的块号
+  uint addr, *a, *b;
+  struct buf *bp, *inbp, *ininbp;
 
+  // 首先检查给定的逻辑块号 bn 是否小于直接索引区的大小 NDIRECT
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
   }
   bn -= NDIRECT;
-
+  // 若逻辑块号 bn 大于等于 NDIRECT，说明需要间接寻址。
+  // 此时减去 NDIRECT，得到在间接块中的偏移量。
   if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
+    // Load indirect blockI, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
@@ -401,6 +404,30 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn -= NINDIRECT;
+  if(bn < NININDIRECT){
+    // Load indirect block II, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    inbp = bread(ip->dev, addr);
+    a = (uint*)inbp->data;
+    if ((addr = a[bn/NINDIRECT]) == 0) { // 之后的每一个映射可以吃下NINDIRECT个blocks
+      a[bn/NINDIRECT] = addr = balloc(ip->dev);
+      log_write(inbp);
+    }
+    brelse(inbp);
+
+    // Load indirect block I, allocating if necessary.
+    ininbp = bread(ip->dev, addr);
+    b = (uint*)ininbp->data;
+    if ((addr = b[bn%NINDIRECT]) == 0) { // 之后的每一个映射可以吃下NINDIRECT个blocks
+      b[bn%NINDIRECT] = addr = balloc(ip->dev);
+      log_write(ininbp);
+    }
+    brelse(ininbp);
+    return addr;
+  }
+
   panic("bmap: out of range");
 }
 
@@ -409,9 +436,9 @@ bmap(struct inode *ip, uint bn)
 void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  int i, j, k;
+  struct buf *bp, *inbp;
+  uint *a, *b;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -430,6 +457,27 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j]) {
+        inbp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+        b = (uint*)inbp->data;
+        for(k = 0; k < NINDIRECT; k++){
+          if(b[k]) {
+            bfree(ip->dev, b[k]);
+          }
+        }
+        brelse(inbp);
+        bfree(ip->dev, a[j]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
@@ -647,7 +695,7 @@ namex(char *path, int nameiparent, char *name)
       return ip;
     }
     if((next = dirlookup(ip, name, 0)) == 0){
-      iunlockput(ip);
+      iunlockput(ip); 
       return 0;
     }
     iunlockput(ip);
